@@ -22,22 +22,9 @@ const USAGE_FILE = path.join(
   'plan-usage-history.json'
 );
 
-const SPARK_BLOCKS = '▁▂▃▄▅▆▇█';
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const POLL_FALLBACK_MS = 30_000;
-
-function sparkline(values: number[]): string {
-  if (values.length === 0) {
-    return '';
-  }
-  return values
-    .map((v) => {
-      const idx = Math.round((clamp(v, 0, 100) / 100) * (SPARK_BLOCKS.length - 1));
-      return SPARK_BLOCKS[idx];
-    })
-    .join('');
-}
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -128,15 +115,8 @@ class UsageController {
     const now = Date.now();
     const latest = samples[samples.length - 1];
 
-    const sessionWindow = downsample(samplesSince(samples, now - FIVE_HOURS_MS), 20).map(
-      (s) => s.u.fh
-    );
-    const weeklyWindow = downsample(samplesSince(samples, now - SEVEN_DAYS_MS), 20).map(
-      (s) => s.u.sd
-    );
-
-    this.sessionItem.text = `✳ H ${latest.u.fh}% ${sparkline(sessionWindow)}`;
-    this.weeklyItem.text = `✳ W ${latest.u.sd}% ${sparkline(weeklyWindow)}`;
+    this.sessionItem.text = `✳ H ${latest.u.fh}%`;
+    this.weeklyItem.text = `✳ W ${latest.u.sd}%`;
     this.sessionItem.color = pctToColor(latest.u.fh);
     this.weeklyItem.color = pctToColor(latest.u.sd);
 
