@@ -93,7 +93,7 @@ function formatCountdown(remainingMs: number | undefined): string {
     return '';
   }
   if (remainingMs <= 0) {
-    return ' est. due now';
+    return ' / est. due now';
   }
   const totalMinutes = Math.round(remainingMs / 60_000);
   const days = Math.floor(totalMinutes / (24 * 60));
@@ -107,7 +107,7 @@ function formatCountdown(remainingMs: number | undefined): string {
     parts.push(`${hours}hr`);
   }
   parts.push(`${minutes}min`);
-  return ` est. ${parts.join(' ')}`;
+  return ` / est. ${parts.join(' ')}`;
 }
 
 class UsageController {
