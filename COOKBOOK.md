@@ -55,10 +55,44 @@ Output: Deliver a detailed briefing report that includes:
   - Any other suggestions a career coach would make to enable success
 ```
 
-## MRD / PRD
+## Building something new: the full pipeline
 
-Source: Kellogg PM101 deliverable templates, not an invented skeleton — full outlines live in [`templates/MRD-outline.md`](./templates/MRD-outline.md) and [`templates/PRD-outline.md`](./templates/PRD-outline.md).
+Sourced from Kellogg coursework (Product Management, New Venture Discovery), not invented — in order:
 
-- **MRD first** — is this problem and market worth solving? Ends in an explicit Go/No-Go call.
-- **PRD second**, only after a Go — how to actually build it: key path scenarios, features, roadmap (v1/vNext/vLongterm), metrics, risks.
-- **Right-size by stakes**: a real product/business idea gets the full outline; a toy/labs project gets the trimmed version noted at the bottom of each template file (roughly: Vision, Unmet Needs, Use Scenarios/Key Path Scenarios, v1 Features, Risks — skip market sizing, cost projections, and go-to-market for something that's just a rep).
+### 1. Pain Point Statement
+
+Before an MRD, before a vision — the raw discovery step. Three questions, answered plainly:
+
+- What problem/pain are you interested in solving?
+- Whose problem is it?
+- Why does the problem interest you personally?
+
+This is upstream of everything else. If we can't answer these three cleanly, we're not ready to draft an MRD yet.
+
+### 2. MRD
+
+Source: Kellogg PM101 template, full outline at [`templates/MRD-outline.md`](./templates/MRD-outline.md). Is this problem and market worth solving? Ends in an explicit Go/No-Go call.
+
+**Caveat worth remembering:** MRD authors are structurally biased toward recommending "yes" — by the time you've written one, you've already sunk effort into believing in it. The Go/No-Go call benefits from outside scrutiny (me pushing back, or you re-reading it a day later), not just self-review. Treat "kill your darlings" as a real option, not a formality.
+
+### 3. Choosing among several candidate ideas (if there's more than one MRD-worthy option)
+
+Two distinct methods, best used together:
+
+- **Criteria-based screening** — evaluate against explicit standards (market size, strategic fit, feasibility). 3M's *Real–Win–Worth-it* is a clean version: is it a real market/product? can we win it? is it worth it financially? Consistent and transparent, but favors safe, incremental ideas.
+- **Multi-voting** — aggregate gut-level enthusiasm (e.g., each of us "votes" for favorites without pre-defined criteria). Faster, better at surfacing unconventional ideas, but less explicit about the reasoning.
+- **Recommended default**: criteria first to ground the discussion, then multi-vote to capture what criteria alone would miss. This is close to what we actually did narrowing down the SaaS ideas earlier — worth using more deliberately next time.
+
+### 4. MVP Smoke Test (before writing a real PRD)
+
+Validate demand before building anything real: ship a single fake-door landing page (not a working product) that communicates the value proposition, and track specific behavioral signals — clicks on the key call-to-action, searches performed, attempted bookings/sign-ups. Only move to a full PRD if the smoke test shows real signal. This fits directly into the "toy projects as reps" approach — cheap to build, honest about what it is, and it's how Grant validated a prior idea (a Lovable-generated landing page) before committing further.
+
+### 5. PRD
+
+Source: Kellogg PM101 template, full outline at [`templates/PRD-outline.md`](./templates/PRD-outline.md), only after a Go. Key path scenarios, features, roadmap (v1/vNext/vLongterm), metrics, risks.
+
+**Filling in "Metrics"**: use Google's **HEART framework** — Happiness, Engagement, Adoption, Retention, Task Success — rather than leaving it vague. Each category gets a Goal, Signals, and Metrics. Pick one North Star metric that the others support.
+
+**Right-size by stakes**: a real product/business idea gets the full outline (MRD and PRD both); a toy/labs project gets the trimmed version noted at the bottom of each template file — roughly Pain Point + Vision + Unmet Needs + Key Path Scenarios + v1 Features + Risks, skipping market sizing, cost projections, and go-to-market.
+
+**Worked example**: [`templates/PRD-worked-example.md`](./templates/PRD-worked-example.md) — a trimmed excerpt from Grant's real Composer PRD, showing what a filled-in PRD (including the HEART framework in practice) actually looks like. Specific financial projections are kept private; this shows structure and substance without the real numbers.
