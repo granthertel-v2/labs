@@ -3,7 +3,7 @@
   "publisher": "local-dev",
   "displayName": "Claude Usage Status",
   "description": "Live session and weekly usage graph for your Claude plan, in the status bar.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
     "vscode": "^1.85.0"
   },

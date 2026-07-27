@@ -61,6 +61,55 @@ function samplesSince(samples: Sample[], sinceMs: number): Sample[] {
   return samples.filter((s) => s.t >= sinceMs);
 }
 
+/**
+ * Estimates when the current window started by scanning backward for the most
+ * recent 0 -> nonzero transition, then returns that start time + windowMs.
+ * Undefined if the window is currently at 0 (nothing counting down yet) or no
+ * transition is found in the available history.
+ */
+function estimateWindowClose(
+  samples: Sample[],
+  key: 'fh' | 'sd',
+  windowMs: number
+): number | undefined {
+  if (samples.length === 0) {
+    return undefined;
+  }
+  const latest = samples[samples.length - 1];
+  if (latest.u[key] === 0) {
+    return undefined;
+  }
+  for (let i = samples.length - 2; i >= 0; i--) {
+    if (samples[i].u[key] === 0 && samples[i + 1].u[key] > 0) {
+      const startEstimate = (samples[i].t + samples[i + 1].t) / 2;
+      return startEstimate + windowMs;
+    }
+  }
+  return undefined;
+}
+
+function formatCountdown(remainingMs: number | undefined): string {
+  if (remainingMs === undefined) {
+    return '';
+  }
+  if (remainingMs <= 0) {
+    return ' est. due now';
+  }
+  const totalMinutes = Math.round(remainingMs / 60_000);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (days > 0 || hours > 0) {
+    parts.push(`${hours}hr`);
+  }
+  parts.push(`${minutes}min`);
+  return ` est. ${parts.join(' ')}`;
+}
+
 class UsageController {
   private sessionItem: vscode.StatusBarItem;
   private weeklyItem: vscode.StatusBarItem;
@@ -115,17 +164,22 @@ class UsageController {
     const now = Date.now();
     const latest = samples[samples.length - 1];
 
-    this.sessionItem.text = `✳ H ${latest.u.fh}%`;
-    this.weeklyItem.text = `✳ W ${latest.u.sd}%`;
+    const sessionClose = estimateWindowClose(samples, 'fh', FIVE_HOURS_MS);
+    const weeklyClose = estimateWindowClose(samples, 'sd', SEVEN_DAYS_MS);
+    const sessionCountdown = formatCountdown(sessionClose === undefined ? undefined : sessionClose - now);
+    const weeklyCountdown = formatCountdown(weeklyClose === undefined ? undefined : weeklyClose - now);
+
+    this.sessionItem.text = `✳ H ${latest.u.fh}%${sessionCountdown}`;
+    this.weeklyItem.text = `✳ W ${latest.u.sd}%${weeklyCountdown}`;
     this.sessionItem.color = pctToColor(latest.u.fh);
     this.weeklyItem.color = pctToColor(latest.u.sd);
 
     const updated = new Date(latest.t).toLocaleTimeString();
     this.sessionItem.tooltip = new vscode.MarkdownString(
-      `**Session window (rolling 5h)**\n\n${latest.u.fh}% used\n\nLast updated: ${updated}`
+      `**Session window (rolling 5h)**\n\n${latest.u.fh}% used\n\nEstimated reset:${sessionCountdown || ' unknown'}\n\n*(estimated from usage history, not Anthropic's own reset clock)*\n\nLast updated: ${updated}`
     );
     this.weeklyItem.tooltip = new vscode.MarkdownString(
-      `**Weekly window (rolling 7d)**\n\n${latest.u.sd}% used\n\nLast updated: ${updated}`
+      `**Weekly window (rolling 7d)**\n\n${latest.u.sd}% used\n\nEstimated reset:${weeklyCountdown || ' unknown'}\n\n*(estimated from usage history, not Anthropic's own reset clock)*\n\nLast updated: ${updated}`
     );
   }
 
