@@ -55,13 +55,10 @@ Output: Deliver a detailed briefing report that includes:
   - Any other suggestions a career coach would make to enable success
 ```
 
-## PRD/MRD skeleton
+## MRD / PRD
 
-Lightweight default — expand as the project warrants:
+Source: Kellogg PM101 deliverable templates, not an invented skeleton — full outlines live in [`templates/MRD-outline.md`](./templates/MRD-outline.md) and [`templates/PRD-outline.md`](./templates/PRD-outline.md).
 
-- **Problem** — what's broken or missing, for whom
-- **Goals / non-goals** — what this explicitly is and isn't trying to do
-- **Users** — who this is for, and what they need from it
-- **Requirements** — the must-haves, in priority order
-- **Success metrics** — how we'll know it worked
-- **Open questions** — what's still undecided and needs a call before or during the build
+- **MRD first** — is this problem and market worth solving? Ends in an explicit Go/No-Go call.
+- **PRD second**, only after a Go — how to actually build it: key path scenarios, features, roadmap (v1/vNext/vLongterm), metrics, risks.
+- **Right-size by stakes**: a real product/business idea gets the full outline; a toy/labs project gets the trimmed version noted at the bottom of each template file (roughly: Vision, Unmet Needs, Use Scenarios/Key Path Scenarios, v1 Features, Risks — skip market sizing, cost projections, and go-to-market for something that's just a rep).
