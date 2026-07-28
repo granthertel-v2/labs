@@ -7,11 +7,31 @@ Frameworks Grant and Claude use for structuring deeper work together, so both st
 | Situation | Approach |
 |---|---|
 | Quick task or question | No framework — just answer or do it. |
+| A recurring documentation/writing task (reports, comms, reviews, briefs) | Use the 5C Loop below. |
 | A build with real scope (new project, meant to last, multi-session) | Propose a lightweight plan, get sign-off, then build in one shot. |
 | Deep research/analysis (career strategy, market analysis, synthesis) | Use the Context / Instruction / Input / Output framework below. |
 | A product or feature decision meant to drive a real build | Draft a PRD/MRD together *before* writing code. |
 
 Claude should prompt toward the right-hand column proactively once a request crosses into one of the deeper rows, rather than waiting to be asked.
+
+## The 5C Loop (recurring documentation work)
+
+Source: [claudecodeguide.dev](https://claudecodeguide.dev/docs/frameworks/5c-loop) — for tasks that recur (reports, SOPs, stakeholder updates, PRDs, reviews), where the win comes from building a reusable system rather than solving the task once.
+
+- **Capture** — raw source material (full docs, actual messages, real notes), not summaries. What Claude works from should be complete, not pre-condensed by you.
+- **Context** — who reads this, what they already know, what they need to do next, and the format/length that fits them. (Engineering leads ask "is this buildable, in what order?"; a VP asks "why does this matter, why now?" — same source material, different Context block.)
+- **Create** — let Claude produce a full draft before editing it. Review after, don't direct mid-draft.
+- **Check** — verify the things only you can: factual accuracy, political/stakeholder sensitivity, whether the ask or recommendation is actually explicit. Accountability stays yours regardless of who drafted it.
+- **Compound** — save the Context block and the prompt as a reusable template for next time. This is the step that turns a 45-minute first attempt into an 8-minute tenth attempt.
+
+Two domain-specific versions worth knowing, since both map onto real recurring work Grant does:
+
+- **[For Operations](https://claudecodeguide.dev/docs/frameworks/for-operations)** — exception reports, SOPs, vendor escalation emails, monthly operational reviews, budget variance narratives, post-incident reports. Directly applicable to Cedar PS&O work.
+- **[For PMs](https://claudecodeguide.dev/docs/frameworks/for-pms)** — PRDs, roadmap narratives, executive one-pagers, stakeholder updates, OKR narratives, GTM briefs. Applicable to both Cedar PS&O and side projects (Composer, labs entries).
+
+Each source page has 8 ready-to-use template prompts (Capture/Context/Create structure) for specific document types — worth pulling the actual template from the source page when a matching recurring task comes up, rather than reconstructing it from this summary.
+
+**How this differs from the pipeline below**: the 5C Loop is for *repeatable production* of a known document type (write this month's variance narrative). The Pain-Point→MRD→PRD pipeline is for *scoping something new* (should this exist, and if so what is it). Different problem, both useful.
 
 ## Context / Instruction / Input / Output framework
 
