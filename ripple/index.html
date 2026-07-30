@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ripple</title>
+<style>
+  :root{
+    --paper:#faf9f4;
+    --ink:#18170f;
+    --hint:#8a8879;
+  }
+  html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--paper);}
+  canvas{display:block;touch-action:none;cursor:crosshair;}
+  #hint{
+    position:fixed;
+    left:50%;
+    bottom:28px;
+    transform:translateX(-50%);
+    font:11px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--hint);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 1.6s ease;
+    user-select:none;
+  }
+  #hint.show{opacity:0.85;}
+  #hint.hide{opacity:0;transition:opacity 0.8s ease;}
+
+  #panel{
+    position:fixed;
+    top:16px;
+    right:16px;
+    background:rgba(250,249,244,0.9);
+    border:1px solid rgba(24,23,15,0.22);
+    padding:12px 14px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    font:10px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color:var(--ink);
+    min-width:180px;
+  }
+  #panel .row{display:flex;flex-direction:column;gap:4px;}
+  #panel .lbl{display:flex;justify-content:space-between;letter-spacing:0.04em;text-transform:uppercase;color:var(--hint);}
+  #panel .lbl span:last-child{color:var(--ink);font-variant-numeric:tabular-nums;}
+  #panel input[type="range"]{width:100%;accent-color:var(--ink);}
+  #panel select{
+    font:10px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color:var(--ink);
+    background:var(--paper);
+    border:1px solid rgba(24,23,15,0.3);
+    padding:4px 6px;
+    letter-spacing:0.04em;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">click to drop</div>
+<div id="panel">
+  <div class="row">
+    <div class="lbl"><span>Blockiness</span><span id="vCell">12</span></div>
+    <input type="range" id="sCell" min="4" max="26" step="1" value="12">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Wave speed</span><span id="vSpeed">0.11</span></div>
+    <input type="range" id="sSpeed" min="0.03" max="0.9" step="0.01" value="0.1125">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Decay</span><span id="vDamp">0.975</span></div>
+    <input type="range" id="sDamp" min="0.90" max="0.995" step="0.001" value="0.975">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Pitch range (oct)</span><span id="vPitch">2.5</span></div>
+    <input type="range" id="sPitch" min="0.5" max="4" step="0.1" value="2.5">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Length of travel</span><span id="vTravel">1.20</span></div>
+    <input type="range" id="sTravel" min="0.25" max="1.3" step="0.01" value="1.2">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Scale</span><span></span></div>
+    <select id="sScale">
+      <option value="free">Free (current)</option>
+      <option value="pentatonic">Pentatonic (consonant)</option>
+      <option value="minorPentatonic">Minor pentatonic (moody)</option>
+      <option value="lydian">Lydian (bright)</option>
+    </select>
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Auto-play speed</span><span id="vAutoSpeed">1.0x</span></div>
+    <input type="range" id="sAutoSpeed" min="0.2" max="4" step="0.1" value="1">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Auto-play</span><span></span></div>
+    <select id="sMode">
+      <option value="normal">Normal</option>
+      <option value="rain">Rainstorm</option>
+      <option value="cave">Meditation cave</option>
+      <option value="storm">Thunderstorm</option>
+    </select>
+  </div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const hint = document.getElementById('hint');
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const PAPER = '#faf9f4';
+  const INK = '#18170f';
+  const BAND_COUNT = 6;
+  const LEVELS = [0.05, 0.12, 0.22, 0.38, 0.6];
+  const FILL_COLORS = ['#efeee6', '#dcdbcf', '#c2bfae', '#a29e8c', '#7c7867'];
+  const CENTER_HZ = 165;
+
+  let CELL = 12;              // simulation cell size, CSS px (bigger = blockier) -- mutable via slider
+  let DAMPING = 0.975;        // per-step decay -- mutable via slider
+  let PHYSICS_RATE = 0.1125;  // simulation steps per rendered frame -- mutable via slider
+  let PITCH_RANGE_OCTAVES = 2.5; // mutable via slider
+  let TRAVEL_RADIUS_FRAC = 1.2;  // fraction of half-diagonal before extra containment damping kicks in
+
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+  let W, H;               // css px
+  let gw, gh;              // grid dims
+  let cur, prev, nextBuf, absGrid, bandGrid, edgeDamp;
+  let physicsAccum = 0;
+
+  function computeEdgeDamp() {
+    edgeDamp = new Float32Array(gw * gh);
+    const maxRadius = Math.hypot(W, H) / 2;
+    const cutoff = maxRadius * TRAVEL_RADIUS_FRAC;
+    const band = maxRadius * 0.5;
+    const FLOOR = 0.8;
+    for (let y = 0; y < gh; y++) {
+      const dy = (y + 0.5) * CELL - H / 2;
+      for (let x = 0; x < gw; x++) {
+        const dx = (x + 0.5) * CELL - W / 2;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        let factor = 1;
+        if (dist > cutoff) {
+          const t = Math.min(1, (dist - cutoff) / band);
+          factor = 1 - t * (1 - FLOOR);
+        }
+        edgeDamp[y * gw + x] = factor;
+      }
+    }
+  }
+
+  function alloc() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    gw = Math.ceil(W / CELL) + 2;
+    gh = Math.ceil(H / CELL) + 2;
+    const n = gw * gh;
+    cur = new Float32Array(n);
+    prev = new Float32Array(n);
+    nextBuf = new Float32Array(n);
+    absGrid = new Float32Array(n);
+    bandGrid = new Uint8Array(n);
+    computeEdgeDamp();
+  }
+
+  function step() {
+    const w = gw, h = gh;
+    for (let y = 1; y < h - 1; y++) {
+      const row = y * w, rowU = row - w, rowD = row + w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = row + x;
+        let v = (cur[i - 1] + cur[i + 1] + cur[rowU + x] + cur[rowD + x]) * 0.5 - prev[i];
+        nextBuf[i] = v * DAMPING * edgeDamp[i];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      nextBuf[x] = nextBuf[w + x];
+      nextBuf[(h - 1) * w + x] = nextBuf[(h - 2) * w + x];
+    }
+    for (let y = 0; y < h; y++) {
+      nextBuf[y * w] = nextBuf[y * w + 1];
+      nextBuf[y * w + w - 1] = nextBuf[y * w + w - 2];
+    }
+    const tmp = prev; prev = cur; cur = nextBuf; nextBuf = tmp;
+  }
+
+  function addDrop(px, py, strength, radius) {
+    const gx = px / CELL, gy = py / CELL;
+    const r = Math.ceil(radius);
+    for (let oy = -r; oy <= r; oy++) {
+      for (let ox = -r; ox <= r; ox++) {
+        const xx = Math.round(gx + ox), yy = Math.round(gy + oy);
+        if (xx < 1 || xx >= gw - 1 || yy < 1 || yy >= gh - 1) continue;
+        const d = Math.sqrt(ox * ox + oy * oy) / radius;
+        if (d > 1) continue;
+        const falloff = Math.cos(d * Math.PI * 0.5);
+        const idx = yy * gw + xx;
+        cur[idx] -= strength * falloff;
+        prev[idx] -= strength * falloff * 0.5;
+      }
+    }
+  }
+
+  function updateAbsAndBands() {
+    for (let i = 0; i < cur.length; i++) {
+      const v = Math.abs(cur[i]);
+      absGrid[i] = v;
+      let b = 0;
+      for (let k = LEVELS.length - 1; k >= 0; k--) { if (v >= LEVELS[k]) { b = k + 1; break; } }
+      bandGrid[i] = b;
+    }
+  }
+
+  // --- rendering ---
+  function renderFill() {
+    const off = renderFill._off || (renderFill._off = document.createElement('canvas'));
+    off.width = gw; off.height = gh;
+    const octx = off.getContext('2d');
+    const img = octx.createImageData(gw, gh);
+    const data = img.data;
+    for (let i = 0; i < bandGrid.length; i++) {
+      const b = bandGrid[i];
+      let r, g, bl;
+      if (b === 0) { r = 250; g = 249; bl = 244; }
+      else {
+        const hex = FILL_COLORS[b - 1];
+        r = parseInt(hex.slice(1, 3), 16);
+        g = parseInt(hex.slice(3, 5), 16);
+        bl = parseInt(hex.slice(5, 7), 16);
+      }
+      const o = i * 4;
+      data[o] = r; data[o + 1] = g; data[o + 2] = bl; data[o + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, gw, gh, 0, 0, W, H);
+  }
+
+  function renderBlockyOutlines() {
+    ctx.beginPath();
+    for (let y = 0; y < gh; y++) {
+      const row = y * gw;
+      for (let x = 0; x < gw; x++) {
+        const i = row + x;
+        const b = bandGrid[i];
+        if (x + 1 < gw && bandGrid[i + 1] !== b) {
+          const lx = (x + 1) * CELL;
+          ctx.moveTo(lx, y * CELL);
+          ctx.lineTo(lx, (y + 1) * CELL);
+        }
+        if (y + 1 < gh && bandGrid[i + gw] !== b) {
+          const ly = (y + 1) * CELL;
+          ctx.moveTo(x * CELL, ly);
+          ctx.lineTo((x + 1) * CELL, ly);
+        }
+      }
+    }
+    ctx.strokeStyle = INK;
+    ctx.lineCap = 'square';
+    ctx.lineWidth = 1.6;
+    ctx.globalAlpha = 0.85;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- falling teardrops (intro + every click) ---
+  const fallingDrops = [];
+  const impacts = [];
+
+  function spawnFallingDrop(cx, cy, startY, dur, strength, radius) {
+    fallingDrops.push({ cx, cy, t0: performance.now(), dur, startY, strength, radius });
+  }
+
+  // --- auto-play modes ---
+  const MODE_CONFIG = {
+    rain:  { minMs: 260,  maxMs: 900,  strength: [3.2, 4.5], radius: 2,   dur: [220, 320], local: true },
+    cave:  { minMs: 2200, maxMs: 2200, strength: [7.2, 7.2], radius: 3.4, dur: [620, 620], local: false },
+    storm: { minMs: 110,  maxMs: 260,  strength: [7.5, 10],  radius: 3,   dur: [130, 190], local: true },
+  };
+  let autoMode = 'normal';
+  let autoTimer = null;
+  let autoSpeedMult = 1;
+
+  function triggerAutoDrop(cfg) {
+    let x, y;
+    if (cfg.local) { x = W * (0.08 + Math.random() * 0.84); y = H * (0.08 + Math.random() * 0.84); }
+    else { x = W / 2; y = H / 2; }
+    const strength = cfg.strength[0] + Math.random() * (cfg.strength[1] - cfg.strength[0]);
+    const dur = cfg.dur[0] + Math.random() * (cfg.dur[1] - cfg.dur[0]);
+    const startY = cfg.local ? y - 70 : -60;
+    spawnFallingDrop(x, y, startY, dur, strength, cfg.radius);
+  }
+
+  function scheduleNextAuto() {
+    if (autoMode === 'normal') return;
+    const cfg = MODE_CONFIG[autoMode];
+    const delay = (cfg.minMs + Math.random() * (cfg.maxMs - cfg.minMs)) / autoSpeedMult;
+    autoTimer = setTimeout(() => { triggerAutoDrop(cfg); scheduleNextAuto(); }, delay);
+  }
+
+  function setAutoMode(mode) {
+    autoMode = mode;
+    clearTimeout(autoTimer);
+    if (autoMode !== 'normal') {
+      triggerAutoDrop(MODE_CONFIG[autoMode]);
+      scheduleNextAuto();
+    }
+  }
+
+  function drawTeardrop(r) {
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 1.9);
+    ctx.bezierCurveTo(r * 1.15, -r * 0.5, r * 1.05, r * 0.55, 0, r);
+    ctx.bezierCurveTo(-r * 1.05, r * 0.55, -r * 1.15, -r * 0.5, 0, -r * 1.9);
+    ctx.closePath();
+  }
+
+  function updateAndRenderFallingDrops() {
+    const now = performance.now();
+    for (let i = fallingDrops.length - 1; i >= 0; i--) {
+      const d = fallingDrops[i];
+      const t = (now - d.t0) / d.dur;
+      if (t >= 1) {
+        addDrop(d.cx, d.cy, d.strength, d.radius);
+        impacts.push({ x: d.cx, y: d.cy, t0: now });
+        fallingDrops.splice(i, 1);
+        continue;
+      }
+      const ease = t * t;
+      const y = d.startY + (d.cy - d.startY) * ease;
+      const squash = 1 + ease * 0.35;
+      ctx.save();
+      ctx.translate(d.cx, y);
+      ctx.scale(1 / squash, squash);
+      drawTeardrop(5.5);
+      ctx.fillStyle = '#e7e5da';
+      ctx.fill();
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function renderImpacts() {
+    const now = performance.now();
+    for (let i = impacts.length - 1; i >= 0; i--) {
+      const s = impacts[i];
+      const age = now - s.t0;
+      if (age > 260) { impacts.splice(i, 1); continue; }
+      const p = age / 260;
+      ctx.strokeStyle = INK;
+      ctx.globalAlpha = (1 - p) * 0.8;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const ang = (k / 8) * Math.PI * 2;
+        const r0 = 4 + p * 4;
+        const r1 = 8 + p * 16;
+        ctx.moveTo(s.x + Math.cos(ang) * r0, s.y + Math.sin(ang) * r0);
+        ctx.lineTo(s.x + Math.cos(ang) * r1, s.y + Math.sin(ang) * r1);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // --- audio ---
+  let audioCtx = null, masterGain, compressor, convolver, reverbSend;
+  let bandNodes = [];
+
+  const SCALES = {
+    pentatonic: [0, 2, 4, 7, 9],
+    minorPentatonic: [0, 3, 5, 7, 10],
+    lydian: [0, 2, 4, 6, 7, 9, 11],
+  };
+  let currentScale = 'free';
+
+  function buildScaleNoteList(rootHz, degrees) {
+    const notes = [];
+    for (let oct = -5; oct <= 5; oct++) {
+      for (const deg of degrees) notes.push(rootHz * Math.pow(2, oct + deg / 12));
+    }
+    notes.sort((a, b) => a - b);
+    return notes;
+  }
+
+  function computeBandFreqs() {
+    const low = CENTER_HZ / Math.pow(2, PITCH_RANGE_OCTAVES / 2);
+    const high = CENTER_HZ * Math.pow(2, PITCH_RANGE_OCTAVES / 2);
+
+    if (currentScale === 'free') {
+      const arr = [];
+      for (let i = 0; i < BAND_COUNT; i++) {
+        const frac = (BAND_COUNT - 1 - i) / (BAND_COUNT - 1); // 1 = top, 0 = bottom
+        arr.push(CENTER_HZ * Math.pow(2, PITCH_RANGE_OCTAVES * (frac - 0.5)));
+      }
+      return arr;
+    }
+
+    const allNotes = buildScaleNoteList(CENTER_HZ, SCALES[currentScale]);
+    let lo = low, hi = high, filtered = [];
+    let guard = 0;
+    while (guard++ < 12) {
+      filtered = allNotes.filter(f => f >= lo && f <= hi);
+      if (filtered.length >= BAND_COUNT) break;
+      lo /= 1.5; hi *= 1.5;
+    }
+    if (filtered.length < BAND_COUNT) filtered = allNotes.slice();
+    filtered.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i < BAND_COUNT; i++) {
+      const posFromHigh = Math.round(i / (BAND_COUNT - 1) * (filtered.length - 1));
+      out.push(filtered[filtered.length - 1 - posFromHigh]);
+    }
+    return out;
+  }
+
+  function applyPitchRange() {
+    if (!audioCtx) return;
+    const freqs = computeBandFreqs();
+    for (let i = 0; i < BAND_COUNT; i++) {
+      const { osc1, osc2 } = bandNodes[i];
+      osc1.frequency.setTargetAtTime(freqs[i], audioCtx.currentTime, 0.05);
+      osc2.frequency.setTargetAtTime(freqs[i] * Math.pow(2, 4 / 1200), audioCtx.currentTime, 0.05);
+    }
+  }
+
+  function makeIR(ctx, duration, decay) {
+    const rate = ctx.sampleRate;
+    const len = Math.floor(rate * duration);
+    const impulse = ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = impulse.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return impulse;
+  }
+
+  function initAudio() {
+    if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.85;
+    compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.ratio.value = 4;
+    masterGain.connect(compressor);
+    compressor.connect(audioCtx.destination);
+
+    convolver = audioCtx.createConvolver();
+    convolver.buffer = makeIR(audioCtx, 2.6, 3.0);
+    reverbSend = audioCtx.createGain();
+    reverbSend.gain.value = 0.3;
+    reverbSend.connect(convolver);
+    convolver.connect(masterGain);
+
+    const lowpass = audioCtx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 2600;
+    lowpass.Q.value = 0.3;
+    lowpass.connect(masterGain);
+
+    const freqs = computeBandFreqs();
+    for (let i = 0; i < BAND_COUNT; i++) {
+      const osc1 = audioCtx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.value = freqs[i];
+      const osc2 = audioCtx.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.value = freqs[i] * Math.pow(2, 4 / 1200);
+      const osc2gain = audioCtx.createGain();
+      osc2gain.gain.value = 0.35;
+      const bandGain = audioCtx.createGain();
+      bandGain.gain.value = 0;
+
+      osc1.connect(bandGain);
+      osc2.connect(osc2gain).connect(bandGain);
+      bandGain.connect(lowpass);
+      bandGain.connect(reverbSend);
+
+      osc1.start(); osc2.start();
+      bandNodes.push({ bandGain, osc1, osc2 });
+    }
+  }
+
+  function updateAudioBands() {
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    const rowsPerBand = gh / BAND_COUNT;
+    for (let b = 0; b < BAND_COUNT; b++) {
+      const y0 = Math.floor(b * rowsPerBand), y1 = Math.floor((b + 1) * rowsPerBand);
+      let sum = 0, count = 0;
+      for (let y = y0; y < y1; y++) {
+        const row = y * gw;
+        for (let x = 1; x < gw - 1; x += 2) { sum += absGrid[row + x]; count++; }
+      }
+      const energy = count ? sum / count : 0;
+      const target = Math.min(0.16, energy * 0.6);
+      bandNodes[b].bandGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.18);
+    }
+  }
+
+  // --- input ---
+  let audioUnlocked = false;
+  function handlePointer(e) {
+    const px = e.clientX, py = e.clientY;
+    if (!audioUnlocked) { initAudio(); audioUnlocked = true; }
+    spawnFallingDrop(px, py, py - 70, 260, 6.5, 3);
+    hint.classList.remove('show');
+    hint.classList.add('hide');
+  }
+  canvas.addEventListener('pointerdown', handlePointer);
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { dpr = Math.max(1, window.devicePixelRatio || 1); alloc(); }, 150);
+  });
+
+  // --- control panel ---
+  const sCell = document.getElementById('sCell'), vCell = document.getElementById('vCell');
+  const sSpeed = document.getElementById('sSpeed'), vSpeed = document.getElementById('vSpeed');
+  const sDamp = document.getElementById('sDamp'), vDamp = document.getElementById('vDamp');
+  const sPitch = document.getElementById('sPitch'), vPitch = document.getElementById('vPitch');
+  const sTravel = document.getElementById('sTravel'), vTravel = document.getElementById('vTravel');
+  const sMode = document.getElementById('sMode');
+  const sScale = document.getElementById('sScale');
+  const sAutoSpeed = document.getElementById('sAutoSpeed'), vAutoSpeed = document.getElementById('vAutoSpeed');
+
+  sCell.addEventListener('input', () => {
+    CELL = parseInt(sCell.value, 10);
+    vCell.textContent = CELL;
+    alloc();
+  });
+  sSpeed.addEventListener('input', () => {
+    PHYSICS_RATE = parseFloat(sSpeed.value);
+    vSpeed.textContent = PHYSICS_RATE.toFixed(3);
+  });
+  sDamp.addEventListener('input', () => {
+    DAMPING = parseFloat(sDamp.value);
+    vDamp.textContent = DAMPING.toFixed(3);
+  });
+  sPitch.addEventListener('input', () => {
+    PITCH_RANGE_OCTAVES = parseFloat(sPitch.value);
+    vPitch.textContent = PITCH_RANGE_OCTAVES.toFixed(1);
+    applyPitchRange();
+  });
+  sTravel.addEventListener('input', () => {
+    TRAVEL_RADIUS_FRAC = parseFloat(sTravel.value);
+    vTravel.textContent = TRAVEL_RADIUS_FRAC.toFixed(2);
+    computeEdgeDamp();
+  });
+  sMode.addEventListener('change', () => setAutoMode(sMode.value));
+  sScale.addEventListener('change', () => { currentScale = sScale.value; applyPitchRange(); });
+  sAutoSpeed.addEventListener('input', () => {
+    autoSpeedMult = parseFloat(sAutoSpeed.value);
+    vAutoSpeed.textContent = autoSpeedMult.toFixed(1) + 'x';
+  });
+  vSpeed.textContent = PHYSICS_RATE.toFixed(3);
+
+  function frame() {
+    physicsAccum += PHYSICS_RATE;
+    while (physicsAccum >= 1) { step(); physicsAccum -= 1; }
+    updateAbsAndBands();
+
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, W, H);
+    renderFill();
+    renderBlockyOutlines();
+    updateAudioBands();
+    updateAndRenderFallingDrops();
+    renderImpacts();
+
+    requestAnimationFrame(frame);
+  }
+
+  alloc();
+  const cx = W / 2, cy = H / 2;
+  setTimeout(() => spawnFallingDrop(cx, cy, -60, reducedMotion ? 1 : 620, 7.2, 3.4), 500);
+  setTimeout(() => hint.classList.add('show'), 2200);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
