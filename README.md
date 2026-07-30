@@ -10,3 +10,7 @@ Small toy projects, built and written up as I go — mostly AI-assisted builds u
 ## Working with Claude
 
 See [`COOKBOOK.md`](./COOKBOOK.md) for the frameworks (PRD/MRD, Context/Instruction/Input/Output) we use for deeper work together.
+
+## Notes
+
+[`notes/`](./notes) — standalone technical learnings from building these projects, not tied to any one entry.
