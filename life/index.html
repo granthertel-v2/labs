@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life</title>
+<style>
+  :root{
+    --paper:#faf9f4;
+    --ink:#18170f;
+    --hint:#8a8879;
+    --line:rgba(24,23,15,0.22);
+  }
+  html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--paper);}
+  canvas{display:block;touch-action:none;cursor:crosshair;}
+  #hint{
+    position:fixed;
+    left:50%;
+    bottom:28px;
+    transform:translateX(-50%);
+    font:11px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--hint);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 1.6s ease;
+    user-select:none;
+  }
+  #hint.show{opacity:0.85;}
+  #hint.hide{opacity:0;transition:opacity 0.8s ease;}
+
+  #panel{
+    position:fixed;
+    top:16px;
+    right:16px;
+    background:rgba(250,249,244,0.9);
+    border:1px solid var(--line);
+    padding:12px 14px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    font:10px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color:var(--ink);
+    /* Fixed, not content-driven: the rule descriptions are full sentences and would otherwise
+       set the panel width to whichever one happens to be longest. */
+    width:268px;
+    box-sizing:border-box;
+    max-height:calc(100vh - 32px);
+    overflow-y:auto;
+    user-select:none;
+  }
+  #panel .row{display:flex;flex-direction:column;gap:4px;}
+  #panel .lbl{display:flex;justify-content:space-between;letter-spacing:0.04em;text-transform:uppercase;color:var(--hint);}
+  #panel .lbl span:last-child{color:var(--ink);font-variant-numeric:tabular-nums;}
+  #panel input[type="range"]{width:100%;accent-color:var(--ink);}
+  #panel select,#panel input[type="text"]{
+    font:10px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color:var(--ink);
+    background:var(--paper);
+    border:1px solid rgba(24,23,15,0.3);
+    padding:4px 6px;
+    letter-spacing:0.04em;
+    width:100%;
+    box-sizing:border-box;
+  }
+  #panel input[type="text"]{letter-spacing:0.1em;}
+  #panel input[type="text"].bad{border-color:#a33;color:#a33;}
+
+  #panel .btns{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+  #panel button{
+    font:10px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--ink);
+    background:var(--paper);
+    border:1px solid rgba(24,23,15,0.3);
+    padding:6px 4px;
+    cursor:pointer;
+  }
+  #panel button:hover{background:#efeee6;}
+  #panel button:active{background:#dcdbcf;}
+
+  #panel :focus-visible{outline:2px solid var(--ink);outline-offset:1px;}
+
+  #panel .desc{
+    font-style:italic;
+    color:var(--hint);
+    line-height:1.55;
+    letter-spacing:0.01em;
+    text-transform:none;
+    margin-top:2px;
+  }
+  #panel .chk{display:flex;align-items:center;gap:6px;letter-spacing:0.04em;text-transform:uppercase;color:var(--hint);cursor:pointer;}
+  #panel .chk input{accent-color:var(--ink);margin:0;}
+
+  #panel .stats{
+    display:flex;flex-direction:column;gap:4px;
+    border-top:1px solid rgba(24,23,15,0.15);
+    padding-top:9px;
+  }
+  #panel .stats div{display:flex;justify-content:space-between;}
+  #panel .stats span:first-child{letter-spacing:0.04em;text-transform:uppercase;color:var(--hint);}
+  #panel .stats span:last-child{font-variant-numeric:tabular-nums;}
+
+  #panel .keys{
+    color:var(--hint);
+    line-height:1.5;
+    letter-spacing:0.04em;
+    border-top:1px solid rgba(24,23,15,0.15);
+    padding-top:9px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">click to draw &middot; space to pause</div>
+<div id="panel">
+  <div class="row">
+    <div class="lbl"><span>Rule</span><span></span></div>
+    <select id="sPreset">
+      <option value="B3/S23">Life</option>
+      <option value="B36/S23">HighLife</option>
+      <option value="B3678/S34678">Day &amp; Night</option>
+      <option value="B2/S">Seeds</option>
+      <option value="B3/S012345678">Life without Death</option>
+      <option value="B3/S12345">Maze</option>
+      <option value="B35678/S5678">Diamoeba</option>
+      <option value="B4678/S35678">Anneal</option>
+      <option value="B1357/S1357">Replicator</option>
+      <option value="B36/S125">2&times;2</option>
+      <option value="B368/S245">Morley</option>
+      <option value="B34/S34">34 Life</option>
+      <option value="custom">Custom</option>
+    </select>
+    <input type="text" id="tRule" spellcheck="false" autocomplete="off" value="B3/S23">
+    <div class="desc" id="ruleDesc"></div>
+  </div>
+
+  <div class="row">
+    <div class="lbl"><span>Stamp</span><span id="vRot">&mdash;</span></div>
+    <select id="sStamp">
+      <option value="">&mdash; none (draw) &mdash;</option>
+      <optgroup label="Still lifes">
+        <option value="block">Block</option>
+        <option value="beehive">Beehive</option>
+      </optgroup>
+      <optgroup label="Oscillators">
+        <option value="blinker">Blinker (p2)</option>
+        <option value="toad">Toad (p2)</option>
+        <option value="beacon">Beacon (p2)</option>
+        <option value="pulsar">Pulsar (p3)</option>
+        <option value="pentadecathlon">Pentadecathlon (p15)</option>
+      </optgroup>
+      <optgroup label="Spaceships">
+        <option value="glider">Glider</option>
+        <option value="lwss">Lightweight spaceship</option>
+      </optgroup>
+      <optgroup label="Methuselahs">
+        <option value="rpentomino">R-pentomino</option>
+        <option value="acorn">Acorn</option>
+        <option value="diehard">Diehard</option>
+      </optgroup>
+      <optgroup label="Guns &amp; oddities">
+        <option value="gosper">Gosper glider gun</option>
+        <option value="replicator">Replicator (HighLife)</option>
+      </optgroup>
+    </select>
+  </div>
+
+  <div class="btns">
+    <button id="bPlay">pause</button>
+    <button id="bStep">step</button>
+    <button id="bRand">soup</button>
+    <button id="bClear">clear</button>
+  </div>
+
+  <div class="row">
+    <div class="lbl"><span>Speed</span><span id="vSpeed">12/s</span></div>
+    <input type="range" id="sSpeed" min="1" max="121" step="1" value="12">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Soup density</span><span id="vDens">28%</span></div>
+    <input type="range" id="sDens" min="5" max="60" step="1" value="28">
+  </div>
+  <div class="row">
+    <div class="lbl"><span>Cell size</span><span id="vCell">6</span></div>
+    <input type="range" id="sCell" min="2" max="24" step="1" value="6">
+  </div>
+
+  <label class="chk"><input type="checkbox" id="cAge" checked><span>Age shading</span></label>
+
+  <div class="stats">
+    <div><span>Gen</span><span id="stGen">0</span></div>
+    <div><span>Population</span><span id="stPop">0</span></div>
+    <div><span>Gen/s</span><span id="stGps">0</span></div>
+    <div><span>Grid</span><span id="stGrid">&mdash;</span></div>
+  </div>
+
+  <div class="keys">space run &middot; &rarr; step &middot; c clear<br>n soup &middot; r rotate stamp</div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const hint = document.getElementById('hint');
+
+  const PAPER = '#faf9f4';
+  const INK = '#18170f';
+  const GRIDLINE = 'rgba(24,23,15,0.07)';
+  // Age ramp: index 0 = just born, last = long-lived. Extends ripple's mid greys toward ink,
+  // so churning cells read light and stable structure reads dark.
+  const AGE_COLORS = ['#a29e8c', '#7c7867', '#55523f', '#33311f', '#18170f'];
+  const AGE_MAX = AGE_COLORS.length;
+  const MAX_SPEED = 121;   // slider top = "uncapped", one generation per animation frame
+
+  let CELL = 6;            // px per cell -- mutable via slider
+  let SPEED = 12;          // generations per second -- mutable via slider
+  let DENSITY = 0.28;      // soup fill fraction -- mutable via slider
+  let ageShading = true;
+  // A board of cells flickering at 12 generations/sec is exactly the kind of motion this
+  // preference exists to suppress -- so lay out the opening soup, but let the user start it.
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let running = !reducedMotion;
+
+  let dpr, W, H;           // css px
+  let gw, gh;              // grid dims
+  let cur, next, age;      // Uint8Array(gw*gh)
+  let xm1, xp1, ym1g, yp1g;// wrap index tables -- keep modulo out of the hot loop
+  let off, offCtx, offImg, offPix;
+  let generation = 0, population = 0;
+
+  // ---------------------------------------------------------------- rule
+
+  let birth = new Uint8Array(9);
+  let survive = new Uint8Array(9);
+
+  function parseRule(str) {
+    const m = /^\s*B([0-8]*)\/S([0-8]*)\s*$/i.exec(str);
+    if (!m) return null;
+    const b = new Uint8Array(9), s = new Uint8Array(9);
+    for (const ch of m[1]) b[+ch] = 1;
+    for (const ch of m[2]) s[+ch] = 1;
+    return { b, s };
+  }
+
+  // Normalized form so "B32/S32" matches the "B23/S23"-style preset values.
+  function canon(str) {
+    const r = parseRule(str);
+    if (!r) return null;
+    let b = '', s = '';
+    for (let i = 0; i <= 8; i++) { if (r.b[i]) b += i; if (r.s[i]) s += i; }
+    return 'B' + b + '/S' + s;
+  }
+
+  // One sentence per preset, keyed by canonical rulestring. Anything else gets a mechanical
+  // description generated from its own digits, so the line is never blank.
+  const RULE_NOTES = {
+    'B3/S23':        'Born on exactly 3 neighbours, surviving on 2 or 3 — the rule Conway tuned to sit on the knife edge between dying out and growing without limit.',
+    'B36/S23':       'Life plus birth on 6 neighbours, which is just enough to yield a replicator: a small pattern that builds copies of itself.',
+    'B2/S':          'Nothing ever survives its own generation — only births carry a pattern forward, so anything you draw detonates into fast, spidery chaos.',
+    'B3678/S34678':  'Live and dead cells obey mirror-image rules, so "off" regions behave exactly like "on" ones and patterns grow as inky continents rather than sparse debris.',
+    'B3/S012345678': 'Cells are born as in Life but never die, so growth is permanent and piles up into coral-like ladders and tangles.',
+    'B3/S12345':     "Life's birth rule with far more generous survival, so growth stalls into branching corridors that look like a maze drawing itself.",
+    'B35678/S5678':  'Survival needs a crowd, so isolated cells evaporate and dense regions congeal into big diamonds with restless, churning edges.',
+    'B4678/S35678':  'Close to a majority vote — each cell tends toward whatever most of its neighbourhood is — so ragged boundaries smooth out and contract like surface tension.',
+    'B1357/S1357':   'A cell is on whenever an odd number of its neighbours are, which makes absolutely any starting pattern copy itself into ever-multiplying duplicates.',
+    'B36/S125':      'Patterns made of 2×2 blocks stay made of 2×2 blocks, giving Life-like behaviour at a chunkier and noticeably slower scale.',
+    'B368/S245':     'A quieter cousin of Life, also called Move, known for very slow spaceships and oscillators with enormous periods.',
+    'B34/S34':       'Birth and survival on the same counts, 3 or 4 — deceptively calm for small patterns, but larger ones explode.'
+  };
+
+  function neighbourPhrase(arr) {
+    const ns = [];
+    for (let i = 0; i <= 8; i++) if (arr[i]) ns.push(i);
+    if (!ns.length) return null;
+    if (ns.length === 9) return 'any number of neighbours';
+    const list = ns.length > 1 ? ns.slice(0, -1).join(', ') + ' or ' + ns[ns.length - 1] : String(ns[0]);
+    return list + (ns.length === 1 && ns[0] === 1 ? ' neighbour' : ' neighbours');
+  }
+
+  function describeRule(str) {
+    const c = canon(str);
+    if (!c) return '';
+    if (RULE_NOTES[c]) return RULE_NOTES[c];
+    const r = parseRule(c);
+    const b = neighbourPhrase(r.b), s = neighbourPhrase(r.s);
+    return (b ? 'A dead cell is born with ' + b : 'No cell is ever born')
+         + '; ' + (s ? 'a live cell survives with ' + s : 'no live cell ever survives') + '.';
+  }
+
+  function applyRule(str) {
+    const r = parseRule(str);
+    if (!r) return false;
+    birth = r.b; survive = r.s;
+    return true;
+  }
+
+  // ------------------------------------------------------------ patterns
+
+  // Canonical patterns, stored as ASCII so the source is its own documentation.
+  // Caveat on the methuselahs: the textbook lifespans (R-pentomino settles at gen 1103,
+  // acorn reaches 633 cells at gen 5206) are INFINITE-PLANE figures. This grid is a torus,
+  // so escaping gliders eventually wrap and crash back into the debris -- the R-pentomino
+  // still hits 1103 on a large grid, but the acorn's gliders lap the board long before
+  // gen 5206 and the numbers drift. That divergence is the topology, not a bug.
+  const PATTERNS = {
+    block:      ['OO',
+                 'OO'],
+    beehive:    ['.OO.',
+                 'O..O',
+                 '.OO.'],
+    blinker:    ['OOO'],
+    toad:       ['.OOO',
+                 'OOO.'],
+    beacon:     ['OO..',
+                 'OO..',
+                 '..OO',
+                 '..OO'],
+    pulsar:     ['..OOO...OOO..',
+                 '.............',
+                 'O....O.O....O',
+                 'O....O.O....O',
+                 'O....O.O....O',
+                 '..OOO...OOO..',
+                 '.............',
+                 '..OOO...OOO..',
+                 'O....O.O....O',
+                 'O....O.O....O',
+                 'O....O.O....O',
+                 '.............',
+                 '..OOO...OOO..'],
+    pentadecathlon: ['..O....O..',
+                     'OO.OOOO.OO',
+                     '..O....O..'],
+    glider:     ['.O.',
+                 '..O',
+                 'OOO'],
+    lwss:       ['O..O.',
+                 '....O',
+                 'O...O',
+                 '.OOOO'],
+    rpentomino: ['.OO',
+                 'OO.',
+                 '.O.'],
+    acorn:      ['.O.....',
+                 '...O...',
+                 'OO..OOO'],
+    diehard:    ['......O.',
+                 'OO......',
+                 '.O...OOO'],
+    gosper:     ['........................O...........',
+                 '......................O.O...........',
+                 '............OO......OO............OO',
+                 '...........O...O....OO............OO',
+                 'OO........O.....O...OO..............',
+                 'OO........O...O.OO....O.O...........',
+                 '..........O.....O.......O...........',
+                 '...........O...O....................',
+                 '............OO......................'],
+    replicator: ['..OOO',
+                 '.O..O',
+                 'O...O',
+                 'O..O.',
+                 'OOO..']
+  };
+
+  function rotate(rows) {
+    const h = rows.length, w = rows[0].length, out = [];
+    for (let x = 0; x < w; x++) {
+      let s = '';
+      for (let y = h - 1; y >= 0; y--) s += rows[y][x];
+      out.push(s);
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------ allocation
+
+  function pack(hex) {
+    const r = parseInt(hex.slice(1, 3), 16),
+          g = parseInt(hex.slice(3, 5), 16),
+          b = parseInt(hex.slice(5, 7), 16);
+    return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+  }
+  const PACK_PAPER = pack(PAPER);
+  const PACK_INK = pack(INK);
+  const PACK_AGE = AGE_COLORS.map(pack);
+
+  function alloc() {
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+
+    const ngw = Math.max(8, Math.ceil(W / CELL));
+    const ngh = Math.max(8, Math.ceil(H / CELL));
+    const nCur = new Uint8Array(ngw * ngh);
+    const nAge = new Uint8Array(ngw * ngh);
+
+    // Carry the board across a resize / cell-size change instead of wiping it. Anchor on the
+    // center, not the corner: changing cell size is effectively zooming, and zoom should hold
+    // whatever you were looking at. Content outside the new bounds is unavoidably lost when
+    // the grid shrinks -- a fixed torus has nowhere to put it.
+    if (cur) {
+      const cw = Math.min(gw, ngw), ch = Math.min(gh, ngh);
+      const sx = (gw - cw) >> 1, sy = (gh - ch) >> 1;   // read window, centered in the old grid
+      const dx = (ngw - cw) >> 1, dy = (ngh - ch) >> 1; // write window, centered in the new one
+      for (let y = 0; y < ch; y++) {
+        const src = (sy + y) * gw + sx, dst = (dy + y) * ngw + dx;
+        for (let x = 0; x < cw; x++) { nCur[dst + x] = cur[src + x]; nAge[dst + x] = age[src + x]; }
+      }
+    }
+
+    gw = ngw; gh = ngh;
+    cur = nCur; age = nAge; next = new Uint8Array(gw * gh);
+
+    xm1 = new Int32Array(gw); xp1 = new Int32Array(gw);
+    for (let x = 0; x < gw; x++) { xm1[x] = x === 0 ? gw - 1 : x - 1; xp1[x] = x === gw - 1 ? 0 : x + 1; }
+    ym1g = new Int32Array(gh); yp1g = new Int32Array(gh);
+    for (let y = 0; y < gh; y++) { ym1g[y] = (y === 0 ? gh - 1 : y - 1) * gw; yp1g[y] = (y === gh - 1 ? 0 : y + 1) * gw; }
+
+    off = document.createElement('canvas');
+    off.width = gw; off.height = gh;
+    offCtx = off.getContext('2d', { alpha: false });
+    offImg = offCtx.createImageData(gw, gh);
+    offPix = new Uint32Array(offImg.data.buffer);
+
+    recount();
+  }
+
+  function recount() {
+    let p = 0;
+    for (let i = 0, n = cur.length; i < n; i++) if (cur[i]) p++;
+    population = p;
+  }
+
+  // ---------------------------------------------------------------- step
+
+  function step() {
+    const w = gw, h = gh, c = cur, n = next, a = age, B = birth, S = survive;
+    let pop = 0;
+    for (let y = 0; y < h; y++) {
+      const row = y * w, rowU = ym1g[y], rowD = yp1g[y];
+      for (let x = 0; x < w; x++) {
+        const xm = xm1[x], xp = xp1[x];
+        const cnt = c[rowU + xm] + c[rowU + x] + c[rowU + xp]
+                  + c[row  + xm]               + c[row  + xp]
+                  + c[rowD + xm] + c[rowD + x] + c[rowD + xp];
+        const i = row + x;
+        const alive = c[i] ? S[cnt] : B[cnt];
+        n[i] = alive;
+        if (alive) { pop++; if (a[i] < AGE_MAX) a[i]++; }
+        else a[i] = 0;
+      }
+    }
+    const t = cur; cur = next; next = t;
+    generation++;
+    population = pop;
+  }
+
+  // -------------------------------------------------------------- render
+
+  function render() {
+    const pix = offPix, c = cur, a = age, n = gw * gh;
+    if (ageShading) {
+      for (let i = 0; i < n; i++) pix[i] = c[i] ? PACK_AGE[a[i] > 0 ? a[i] - 1 : 0] : PACK_PAPER;
+    } else {
+      for (let i = 0; i < n; i++) pix[i] = c[i] ? PACK_INK : PACK_PAPER;
+    }
+    offCtx.putImageData(offImg, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, gw, gh, 0, 0, gw * CELL, gh * CELL);
+    if (CELL >= 8) drawGrid();
+  }
+
+  function drawGrid() {
+    const wpx = gw * CELL, hpx = gh * CELL;
+    ctx.beginPath();
+    for (let x = 0; x <= gw; x++) { const px = x * CELL + 0.5; ctx.moveTo(px, 0); ctx.lineTo(px, hpx); }
+    for (let y = 0; y <= gh; y++) { const py = y * CELL + 0.5; ctx.moveTo(0, py); ctx.lineTo(wpx, py); }
+    ctx.strokeStyle = GRIDLINE;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // ---------------------------------------------------------- board edits
+
+  function wrapX(x) { return ((x % gw) + gw) % gw; }
+  function wrapY(y) { return ((y % gh) + gh) % gh; }
+
+  function setCell(x, y, v) {
+    const i = wrapY(y) * gw + wrapX(x);
+    if (cur[i] === v) return;
+    cur[i] = v;
+    age[i] = v ? 1 : 0;
+    population += v ? 1 : -1;
+  }
+
+  function placeStamp(rows, cx, cy) {
+    const h = rows.length, w = rows[0].length;
+    const x0 = cx - (w >> 1), y0 = cy - (h >> 1);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) if (rows[y][x] === 'O') setCell(x0 + x, y0 + y, 1);
+    }
+  }
+
+  function clearBoard() {
+    cur.fill(0); age.fill(0);
+    generation = 0; population = 0;
+    render(); updateStats();
+  }
+
+  function randomize() {
+    for (let i = 0, n = cur.length; i < n; i++) {
+      const v = Math.random() < DENSITY ? 1 : 0;
+      cur[i] = v; age[i] = v;
+    }
+    generation = 0;
+    recount();
+    render(); updateStats();
+  }
+
+  // -------------------------------------------------------------- pointer
+
+  let painting = false, paintVal = 1, lastCX = 0, lastCY = 0;
+
+  function cellAt(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: Math.floor((e.clientX - r.left) / CELL), y: Math.floor((e.clientY - r.top) / CELL) };
+  }
+
+  // A fast drag skips cells between pointermove events; interpolate so strokes stay solid.
+  function paintLine(x0, y0, x1, y1, v) {
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    if (steps === 0) { setCell(x1, y1, v); return; }
+    for (let i = 0; i <= steps; i++) {
+      setCell(Math.round(x0 + (x1 - x0) * i / steps), Math.round(y0 + (y1 - y0) * i / steps), v);
+    }
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    // Capture keeps a drag tracking once it leaves the canvas, but it is a convenience --
+    // never let it throw (synthetic or stale pointer ids do) and take drawing down with it.
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    hideHint();
+    const { x, y } = cellAt(e);
+    if (stampRows) { placeStamp(stampRows, x, y); render(); updateStats(); return; }
+    painting = true;
+    paintVal = cur[wrapY(y) * gw + wrapX(x)] ? 0 : 1;
+    lastCX = x; lastCY = y;
+    setCell(x, y, paintVal);
+    render(); updateStats();
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (!painting) return;
+    const { x, y } = cellAt(e);
+    paintLine(lastCX, lastCY, x, y, paintVal);
+    lastCX = x; lastCY = y;
+    render(); updateStats();
+  });
+
+  const endPaint = () => { painting = false; };
+  canvas.addEventListener('pointerup', endPaint);
+  canvas.addEventListener('pointercancel', endPaint);
+
+  // ---------------------------------------------------------------- panel
+
+  const sPreset = document.getElementById('sPreset');
+  const tRule = document.getElementById('tRule');
+  const sStamp = document.getElementById('sStamp');
+  const vRot = document.getElementById('vRot');
+  const bPlay = document.getElementById('bPlay');
+  const bStep = document.getElementById('bStep');
+  const bRand = document.getElementById('bRand');
+  const bClear = document.getElementById('bClear');
+  const sSpeed = document.getElementById('sSpeed'), vSpeed = document.getElementById('vSpeed');
+  const sDens = document.getElementById('sDens'), vDens = document.getElementById('vDens');
+  const sCell = document.getElementById('sCell'), vCell = document.getElementById('vCell');
+  const cAge = document.getElementById('cAge');
+  const ruleDesc = document.getElementById('ruleDesc');
+  const stGen = document.getElementById('stGen'), stPop = document.getElementById('stPop');
+  const stGps = document.getElementById('stGps'), stGrid = document.getElementById('stGrid');
+
+  let stampKey = '', stampRot = 0, stampRows = null;
+
+  function rebuildStamp() {
+    if (!stampKey) { stampRows = null; vRot.textContent = '—'; return; }
+    let rows = PATTERNS[stampKey];
+    for (let i = 0; i < stampRot; i++) rows = rotate(rows);
+    stampRows = rows;
+    vRot.textContent = (stampRot * 90) + '°';
+  }
+
+  function syncPresetFromText() {
+    const c = canon(tRule.value);
+    for (const opt of sPreset.options) {
+      if (opt.value !== 'custom' && canon(opt.value) === c) { sPreset.value = opt.value; return; }
+    }
+    sPreset.value = 'custom';
+  }
+
+  sPreset.addEventListener('change', () => {
+    if (sPreset.value === 'custom') return;
+    tRule.value = sPreset.value;
+    tRule.classList.remove('bad');
+    applyRule(sPreset.value);
+    ruleDesc.textContent = describeRule(sPreset.value);
+    // Deliberately does not clear the board -- watching the same soup re-evolve
+    // under a different law is the entire point of the rule lab.
+    render();
+  });
+
+  tRule.addEventListener('input', () => {
+    // On an invalid string the previous rule and its description both stay put -- blanking
+    // the line mid-keystroke would flicker on the way to every valid rule.
+    if (applyRule(tRule.value)) {
+      tRule.classList.remove('bad');
+      syncPresetFromText();
+      ruleDesc.textContent = describeRule(tRule.value);
+    } else tRule.classList.add('bad');
+  });
+
+  sStamp.addEventListener('change', () => { stampKey = sStamp.value; stampRot = 0; rebuildStamp(); });
+
+  function setRunning(v) {
+    running = v;
+    bPlay.textContent = v ? 'pause' : 'play';
+    acc = 0;
+  }
+
+  bPlay.addEventListener('click', () => setRunning(!running));
+  bStep.addEventListener('click', () => { setRunning(false); step(); render(); updateStats(); });
+  bRand.addEventListener('click', randomize);
+  bClear.addEventListener('click', clearBoard);
+
+  sSpeed.addEventListener('input', () => {
+    SPEED = +sSpeed.value;
+    vSpeed.textContent = SPEED >= MAX_SPEED ? 'max' : SPEED + '/s';
+    acc = 0;
+  });
+  sDens.addEventListener('input', () => {
+    DENSITY = +sDens.value / 100;
+    vDens.textContent = sDens.value + '%';
+  });
+  sCell.addEventListener('input', () => {
+    CELL = +sCell.value;
+    vCell.textContent = CELL;
+    alloc(); render(); updateStats();
+  });
+  cAge.addEventListener('change', () => { ageShading = cAge.checked; render(); });
+
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const k = e.key.toLowerCase();
+    if (e.code === 'Space') { e.preventDefault(); setRunning(!running); hideHint(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); setRunning(false); step(); render(); updateStats(); }
+    else if (k === 'c') clearBoard();
+    else if (k === 'n') randomize();
+    else if (k === 'r' && stampKey) { stampRot = (stampRot + 1) % 4; rebuildStamp(); }
+  });
+
+  window.addEventListener('resize', () => { alloc(); render(); updateStats(); });
+
+  function updateStats() {
+    stGen.textContent = generation.toLocaleString();
+    stPop.textContent = population.toLocaleString();
+    stGps.textContent = gps < 10 ? gps.toFixed(1) : Math.round(gps).toLocaleString();
+    stGrid.textContent = gw + '×' + gh;
+  }
+
+  // ------------------------------------------------------------ main loop
+
+  let acc = 0, lastT = performance.now();
+  let gensWindow = 0, gpsT = lastT, gps = 0;
+
+  function frame(t) {
+    const dt = Math.min(0.25, (t - lastT) / 1000);
+    lastT = t;
+
+    if (running) {
+      if (SPEED >= MAX_SPEED) { step(); gensWindow++; }
+      else {
+        acc += dt * SPEED;
+        let budget = 16;   // a background-tab stall must not blow up one frame
+        while (acc >= 1 && budget-- > 0) { acc -= 1; step(); gensWindow++; }
+        if (acc > 1) acc = 0;
+      }
+      render();
+    }
+
+    if (t - gpsT >= 500) {
+      gps = gensWindow * 1000 / (t - gpsT);
+      gensWindow = 0; gpsT = t;
+      updateStats();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------------- start
+
+  function hideHint() { hint.classList.remove('show'); hint.classList.add('hide'); }
+
+  applyRule('B3/S23');
+  ruleDesc.textContent = describeRule('B3/S23');
+  alloc();
+  randomize();
+  render();
+  setRunning(running);
+  hint.textContent = running ? 'click to draw · space to pause' : 'click to draw · space to run';
+  setTimeout(() => hint.classList.add('show'), 700);
+  setTimeout(hideHint, 7000);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
