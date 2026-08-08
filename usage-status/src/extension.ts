@@ -63,9 +63,12 @@ function samplesSince(samples: Sample[], sinceMs: number): Sample[] {
 
 /**
  * Estimates when the current window started by scanning backward for the most
- * recent 0 -> nonzero transition, then returns that start time + windowMs.
- * Undefined if the window is currently at 0 (nothing counting down yet) or no
- * transition is found in the available history.
+ * recent reset — a decrease in usage between consecutive samples, since usage
+ * only climbs within a live window. (Not a 0 -> nonzero transition: the 5-minute
+ * sample cadence can easily skip over the instant a window hits exactly 0, e.g.
+ * jumping straight from 24% to 2% on the new window.) Returns that reset time +
+ * windowMs. Undefined if the window is currently at 0 (nothing counting down
+ * yet) or no reset is found in the available history.
  */
 function estimateWindowClose(
   samples: Sample[],
@@ -79,9 +82,9 @@ function estimateWindowClose(
   if (latest.u[key] === 0) {
     return undefined;
   }
-  for (let i = samples.length - 2; i >= 0; i--) {
-    if (samples[i].u[key] === 0 && samples[i + 1].u[key] > 0) {
-      const startEstimate = (samples[i].t + samples[i + 1].t) / 2;
+  for (let i = samples.length - 1; i >= 1; i--) {
+    if (samples[i].u[key] < samples[i - 1].u[key]) {
+      const startEstimate = (samples[i - 1].t + samples[i].t) / 2;
       return startEstimate + windowMs;
     }
   }
